@@ -164,8 +164,15 @@ function renderCreator(){
     <input type="text" id="pw" placeholder="Ej. algo que solo ella sepa">
     <label for="hint">Pista (se mostrará antes de pedir la contraseña)</label>
     <input type="text" id="hint" placeholder="Ej. el lugar de nuestra primera cita">
-    <button id="gen">Generar carta cifrada + QR</button>
+    <button id="gen">Generar carta cifrada</button>
     <div class="result" id="result" style="display:none">
+      <p style="font-size:13.5px;color:#5c6b4f;text-align:left;">
+        1. Descarga el archivo cifrado y súbelo a tu repositorio (junto a index.html):
+      </p>
+      <a class="link-btn" id="dlmsg" style="display:inline-block;background:#f5efe6;padding:8px 14px;border-radius:6px;">⬇ Descargar msg.json</a>
+      <p style="font-size:13.5px;color:#5c6b4f;text-align:left;margin-top:18px;">
+        2. Después de subir ese archivo y hacer push, este es el QR que va en la tarjeta (apunta a tu página, corto y fijo):
+      </p>
       <div id="qrcode"></div>
       <div class="url-box" id="urlbox"></div>
       <a class="link-btn" id="opentest" target="_blank">Abrir para probar →</a>
@@ -178,22 +185,40 @@ function renderCreator(){
     if (!msg || !pw) { alert('Escribe el mensaje y la contraseña.'); return; }
     const packed = await encryptMsg(msg, pw);
     const base = location.origin + location.pathname;
-    const url = `${base}?d=${encodeURIComponent(packed)}&h=${encodeURIComponent(hint)}`;
+
+    // archivo msg.json para descargar y subir al repo
+    const blob = new Blob([JSON.stringify({ d: packed, h: hint })], { type: 'application/json' });
+    const blobUrl = URL.createObjectURL(blob);
+    const dl = document.getElementById('dlmsg');
+    dl.href = blobUrl;
+    dl.download = 'msg.json';
+
     document.getElementById('result').style.display = 'block';
-    document.getElementById('urlbox').textContent = url;
-    document.getElementById('opentest').href = url;
-    const qrImgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=' + encodeURIComponent(url);
+    document.getElementById('urlbox').textContent = base;
+    document.getElementById('opentest').href = base;
+    const qrImgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=' + encodeURIComponent(base);
     document.getElementById('qrcode').innerHTML = `<img src="${qrImgUrl}" alt="Código QR" width="220" height="220" style="border-radius:8px;">
       <div style="margin-top:10px;"><a href="${qrImgUrl}" download="qr-carta-secreta.png" style="font-size:13px;color:#7a2e3b;">⬇ Descargar imagen del QR</a></div>`;
   };
 }
 
 // ---------- enrutamiento ----------
-if (params.has('d')) {
-  renderReader(decodeURIComponent(params.get('d')), decodeURIComponent(params.get('h') || ''));
-} else {
+async function boot(){
+  if (params.has('d')) {
+    renderReader(decodeURIComponent(params.get('d')), decodeURIComponent(params.get('h') || ''));
+    return;
+  }
+  try {
+    const res = await fetch('./msg.json', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      renderReader(data.d, data.h || '');
+      return;
+    }
+  } catch (e) { /* no hay msg.json todavía */ }
   renderCreator();
 }
+boot();
 </script>
 </body>
 </html>
