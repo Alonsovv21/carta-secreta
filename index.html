@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Un mensaje esperando ser leído</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
 <style>
   :root{
     --ink:#3a2b2b;
@@ -182,8 +182,9 @@ function renderCreator(){
     document.getElementById('result').style.display = 'block';
     document.getElementById('urlbox').textContent = url;
     document.getElementById('opentest').href = url;
-    document.getElementById('qrcode').innerHTML = '';
-    new QRCode(document.getElementById('qrcode'), { text: url, width:220, height:220, colorDark:'#7a2e3b', colorLight:'#fffdfa' });
+    const qrImgUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=10&data=' + encodeURIComponent(url);
+    document.getElementById('qrcode').innerHTML = `<img src="${qrImgUrl}" alt="Código QR" width="220" height="220" style="border-radius:8px;">
+      <div style="margin-top:10px;"><a href="${qrImgUrl}" download="qr-carta-secreta.png" style="font-size:13px;color:#7a2e3b;">⬇ Descargar imagen del QR</a></div>`;
   };
 }
 
