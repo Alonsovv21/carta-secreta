@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Un mensaje esperando ser leído</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --ink:#3a2b2b;
+    --paper:#faf3ea;
+    --rose:#b5495b;
+    --rose-deep:#7a2e3b;
+    --leaf:#5c6b4f;
+    --line:#e3d3c0;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(circle at 15% 20%, #f3e2d2 0%, transparent 45%),
+      radial-gradient(circle at 85% 80%, #e9d6d9 0%, transparent 50%),
+      var(--paper);
+    font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+    color: var(--ink);
+    padding: 24px;
+  }
+  .card{
+    width:100%; max-width:480px;
+    background: #fffdfa;
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:36px 32px;
+    box-shadow: 0 20px 50px -25px rgba(122,46,59,0.35);
+    position:relative;
+  }
+  .card::before{
+    content:"❧";
+    position:absolute; top:-18px; left:50%; transform:translateX(-50%);
+    background:var(--paper); padding:0 10px;
+    color:var(--rose); font-size:22px;
+  }
+  h1{
+    font-size:22px; text-align:center; margin:6px 0 4px; color:var(--rose-deep);
+    letter-spacing:0.3px;
+  }
+  .sub{
+    text-align:center; font-size:13px; color:#8a7a6d; margin-bottom:26px;
+    font-style:italic;
+  }
+  label{
+    display:block; font-size:12.5px; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--leaf); margin:16px 0 6px;
+  }
+  textarea, input{
+    width:100%; font-family:inherit; font-size:15px; color:var(--ink);
+    border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+    background:#fffefc;
+  }
+  textarea{min-height:110px; resize:vertical;}
+  textarea:focus, input:focus{outline:2px solid var(--rose); outline-offset:1px;}
+  button{
+    margin-top:22px; width:100%; padding:13px; border:none; border-radius:8px;
+    background:var(--rose); color:#fff8f4; font-size:15px; letter-spacing:0.03em;
+    cursor:pointer; font-family:inherit;
+  }
+  button:hover{background:var(--rose-deep);}
+  .hint-box{
+    margin-top:18px; padding:14px 16px; border-left:3px solid var(--rose);
+    background:#fbeee7; border-radius:0 8px 8px 0; font-style:italic; font-size:14.5px;
+  }
+  .result{ text-align:center; margin-top:24px; }
+  .result img{ border:8px solid #fff; box-shadow:0 6px 20px -8px rgba(0,0,0,0.25); }
+  .url-box{
+    margin-top:14px; font-size:11.5px; word-break:break-all; color:#8a7a6d;
+    background:#f5efe6; padding:10px; border-radius:8px;
+  }
+  .msg-out{
+    margin-top:20px; padding:20px; background:#f9f4ec; border-radius:8px;
+    white-space:pre-wrap; line-height:1.6; font-size:16px; display:none;
+  }
+  .error{ color:var(--rose-deep); font-size:13px; margin-top:10px; display:none; }
+  .note{ font-size:11.5px; color:#9c8d80; text-align:center; margin-top:22px; line-height:1.5;}
+  #qrcode{ display:inline-block; margin-top:16px; }
+  .link-btn{
+    display:inline-block; margin-top:10px; font-size:13px; color:var(--rose-deep);
+  }
+</style>
+</head>
+<body>
+<div class="card" id="app"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const app = document.getElementById('app');
+
+// ---------- utilidades cripto ----------
+function b64url(bytes){
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function unb64url(str){
+  str = str.replace(/-/g,'+').replace(/_/g,'/');
+  while (str.length % 4) str += '=';
+  return Uint8Array.from(atob(str), c => c.charCodeAt(0));
+}
+async function deriveKey(password, salt){
+  const enc = new TextEncoder();
+  const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations:150000, hash:'SHA-256' },
+    material, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']
+  );
+}
+async function encryptMsg(message, password){
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, new TextEncoder().encode(message));
+  return `${b64url(salt)}.${b64url(iv)}.${b64url(new Uint8Array(ct))}`;
+}
+async function decryptMsg(packed, password){
+  const [saltB, ivB, ctB] = packed.split('.');
+  const salt = unb64url(saltB), iv = unb64url(ivB), ct = unb64url(ctB);
+  const key = await deriveKey(password, salt);
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
+  return new TextDecoder().decode(pt);
+}
+
+// ---------- vista: LEER MENSAJE ----------
+function renderReader(data, hint){
+  app.innerHTML = `
+    <h1>Un mensaje te espera 🌸</h1>
+    <div class="sub">Escrito solo para ti</div>
+    ${hint ? `<div class="hint-box">💭 Pista: ${hint}</div>` : ''}
+    <label for="pw">Contraseña</label>
+    <input type="password" id="pw" placeholder="Escribe la contraseña">
+    <button id="go">Revelar mensaje</button>
+    <div class="error" id="err">Contraseña incorrecta. Inténtalo de nuevo.</div>
+    <div class="msg-out" id="out"></div>
+  `;
+  document.getElementById('go').onclick = async () => {
+    const pw = document.getElementById('pw').value;
+    const err = document.getElementById('err');
+    const out = document.getElementById('out');
+    err.style.display = 'none';
+    try {
+      const text = await decryptMsg(data, pw);
+      out.textContent = text;
+      out.style.display = 'block';
+    } catch(e) {
+      err.style.display = 'block';
+    }
+  };
+}
+
+// ---------- vista: CREAR MENSAJE ----------
+function renderCreator(){
+  app.innerHTML = `
+    <h1>Escribe tu carta secreta 🌹</h1>
+    <div class="sub">Nadie más podrá leerla — solo quien tenga la contraseña</div>
+    <label for="msg">Mensaje</label>
+    <textarea id="msg" placeholder="Escribe aquí lo que quieres decirle..."></textarea>
+    <label for="pw">Contraseña</label>
+    <input type="text" id="pw" placeholder="Ej. algo que solo ella sepa">
+    <label for="hint">Pista (se mostrará antes de pedir la contraseña)</label>
+    <input type="text" id="hint" placeholder="Ej. el lugar de nuestra primera cita">
+    <button id="gen">Generar carta cifrada + QR</button>
+    <div class="result" id="result" style="display:none">
+      <div id="qrcode"></div>
+      <div class="url-box" id="urlbox"></div>
+      <a class="link-btn" id="opentest" target="_blank">Abrir para probar →</a>
+    </div>
+  `;
+  document.getElementById('gen').onclick = async () => {
+    const msg = document.getElementById('msg').value.trim();
+    const pw = document.getElementById('pw').value;
+    const hint = document.getElementById('hint').value.trim();
+    if (!msg || !pw) { alert('Escribe el mensaje y la contraseña.'); return; }
+    const packed = await encryptMsg(msg, pw);
+    const base = location.origin + location.pathname;
+    const url = `${base}?d=${encodeURIComponent(packed)}&h=${encodeURIComponent(hint)}`;
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('urlbox').textContent = url;
+    document.getElementById('opentest').href = url;
+    document.getElementById('qrcode').innerHTML = '';
+    new QRCode(document.getElementById('qrcode'), { text: url, width:220, height:220, colorDark:'#7a2e3b', colorLight:'#fffdfa' });
+  };
+}
+
+// ---------- enrutamiento ----------
+if (params.has('d')) {
+  renderReader(decodeURIComponent(params.get('d')), decodeURIComponent(params.get('h') || ''));
+} else {
+  renderCreator();
+}
+</script>
+</body>
+</html>
